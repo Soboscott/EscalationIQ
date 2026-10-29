@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EscalationIQ | Support Escalation Command Center</title>
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <a class="brand" href="./"><span class="brand-mark">◆</span> EscalationIQ</a>
+      <span class="tag">SUPPORT OPERATIONS</span>
+    </div>
+    <button id="newEscalationBtn" class="button primary">+ New escalation</button>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">CUSTOMER RISK, IN FOCUS</p>
+        <h1>Escalation command center</h1>
+        <p class="lede">Track impact, ownership, checkpoints, and executive-ready updates without losing the customer story.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="loadDemoBtn" class="button">Reload demo data</button>
+        <button id="exportBtn" class="button">Export JSON</button>
+      </div>
+    </section>
+
+    <section id="metrics" class="metrics" aria-label="Escalation metrics"></section>
+
+    <section class="workspace">
+      <aside class="panel queue-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">ACTIVE QUEUE</p>
+            <h2>Escalations</h2>
+          </div>
+          <select id="severityFilter" aria-label="Filter by severity">
+            <option value="">All severities</option>
+            <option value="SEV-1">SEV-1</option>
+            <option value="SEV-2">SEV-2</option>
+            <option value="SEV-3">SEV-3</option>
+          </select>
+        </div>
+        <div id="queue" class="queue"></div>
+      </aside>
+
+      <section id="detailPanel" class="panel detail-panel" aria-live="polite"></section>
+    </section>
+  </main>
+
+  <dialog id="escalationDialog">
+    <form id="escalationForm" method="dialog">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">NEW ESCALATION</p>
+          <h2>Create escalation</h2>
+        </div>
+        <button type="button" id="closeDialogBtn" class="icon-button" aria-label="Close">×</button>
+      </div>
+
+      <div class="form-grid">
+        <label>Customer
+          <input name="customer" required placeholder="Axiom Corp">
+        </label>
+        <label>Title
+          <input name="title" required placeholder="Checkout failures during peak traffic">
+        </label>
+        <label>Severity
+          <select name="severity">
+            <option>SEV-1</option>
+            <option selected>SEV-2</option>
+            <option>SEV-3</option>
+          </select>
+        </label>
+        <label>Status
+          <select name="status">
+            <option selected>Investigating</option>
+            <option>Monitoring</option>
+            <option>Resolved</option>
+          </select>
+        </label>
+        <label>Owner
+          <input name="owner" required placeholder="Support Lead">
+        </label>
+        <label>Next checkpoint
+          <input name="checkpoint" type="datetime-local" required>
+        </label>
+      </div>
+
+      <label>Customer impact
+        <textarea name="impact" rows="3" required placeholder="Customers intermittently cannot complete checkout..."></textarea>
+      </label>
+
+      <label>Current hypothesis / investigation
+        <textarea name="investigation" rows="3" required placeholder="Engineering is comparing failed requests across application nodes..."></textarea>
+      </label>
+
+      <div class="dialog-actions">
+        <button type="button" id="cancelDialogBtn" class="button">Cancel</button>
+        <button type="submit" class="button primary">Create escalation</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
