@@ -1,0 +1,6 @@
+{
+  "name": "escalationiq",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}
