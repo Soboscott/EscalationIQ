@@ -30,7 +30,13 @@
 
     <section id="metrics" class="metrics" aria-label="Escalation metrics"></section>
 
-    <section class="workspace">
+    <nav class="view-switcher" aria-label="Workspace views">
+      <button id="queueViewBtn" class="button primary" aria-pressed="true" aria-controls="queueView">Escalations</button>
+      <button id="analyticsViewBtn" class="button" aria-pressed="false" aria-controls="analyticsView">Analytics</button>
+    </nav>
+    <section id="analyticsView" class="panel analytics-panel" aria-label="Escalation analytics" hidden></section>
+
+    <section id="queueView" class="workspace">
       <aside class="panel queue-panel">
         <div class="panel-heading">
           <div>
@@ -51,12 +57,12 @@
     </section>
   </main>
 
-  <dialog id="escalationDialog">
+  <dialog id="escalationDialog" aria-labelledby="dialogTitle">
     <form id="escalationForm" method="dialog">
       <div class="dialog-heading">
         <div>
-          <p class="eyebrow">NEW ESCALATION</p>
-          <h2>Create escalation</h2>
+          <p class="eyebrow" id="dialogEyebrow">NEW ESCALATION</p>
+          <h2 id="dialogTitle">Create escalation</h2>
         </div>
         <button type="button" id="closeDialogBtn" class="icon-button" aria-label="Close">×</button>
       </div>
@@ -100,7 +106,7 @@
 
       <div class="dialog-actions">
         <button type="button" id="cancelDialogBtn" class="button">Cancel</button>
-        <button type="submit" class="button primary">Create escalation</button>
+        <button id="saveEscalationBtn" type="submit" class="button primary">Create escalation</button>
       </div>
     </form>
   </dialog>
