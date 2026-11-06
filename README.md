@@ -50,10 +50,19 @@ This project demonstrates support operations leadership, critical escalation man
 
 ## Roadmap
 
-- Editable severity and response policies
-- SLA/checkpoint risk indicators
-- Stakeholder and action-item tracking
-- Postmortem / lessons-learned workflow
-- Incident trend analytics
+- Configurable response policies
+- Configurable SLA policies
 - CSV/JSON import
 - Optional AI-assisted summarization through a secure server-side integration
+
+## Editing and analytics
+
+- **Edit escalation** opens the existing form with customer, title, severity, status, owner, checkpoint, impact, and investigation filled in. Saving preserves the incident ID, stakeholders, actions, and postmortem, and adds a timeline entry listing changed fields. Cancel and unchanged saves leave the record untouched.
+- **Reload demo data** creates dates relative to the current time, including action deadlines and timeline events. It asks before replacing local data. Reloading the page preserves saved dates and edits; existing records are never silently shifted.
+- **Analytics** covers all records in this browser (including demo records), independent of the queue's severity filter. It shows active severity distribution, status distribution, owner workload, overdue checkpoints, and opened/resolved counts for the last 14 local calendar days.
+- Mean time to resolution uses currently resolved incidents with valid creation and resolution timestamps. Older records remain in totals but are excluded from metrics requiring missing timestamps. Reopening clears the current resolution timestamp; resolving again measures the full lifetime from original creation. Daily resolutions reflect the latest resolution of currently resolved incidents, not a historical count of every status transition.
+
+## Local development and checks
+
+Serve the repository with `python -m http.server 8765`, then visit `http://localhost:8765`.
+Run `npm test` with Node.js 20 or newer; the unit tests need no third-party dependencies. For a timezone check, run `TZ=America/New_York npm test`.
