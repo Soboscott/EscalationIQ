@@ -1,4 +1,4 @@
-export const demoEscalations = [
+const demoTemplates = [
   {
     id: "ESC-1042",
     customer: "Axiom Commerce",
@@ -24,7 +24,7 @@ export const demoEscalations = [
       {time:"08:42", text:"Customer reports increased checkout failures and opens priority escalation."},
       {time:"09:05", text:"Support confirms impact across multiple sessions and engages Engineering."},
       {time:"10:20", text:"Traffic and node-level behavior compared; investigation remains open."},
-      {time:"12:40", text:"Customer update sent with confirmed facts, owners, and 2:00 PM checkpoint."}
+      {time:"12:40", text:"Customer update sent with confirmed facts, owners, and the next checkpoint."}
     ]
   },
   {
@@ -85,3 +85,23 @@ export const demoEscalations = [
     ]
   }
 ];
+
+// Seed a coherent scenario relative to load time, then persist it unchanged.
+export function createDemoEscalations(now = new Date()) {
+  const anchor = Date.parse('2026-10-29T13:00:00Z');
+  const shift = value => {
+    const utc = value.endsWith('Z') ? value : `${value}${value.length === 16 ? ':00' : ''}Z`;
+    return new Date(Date.parse(utc) + now.getTime() - anchor).toISOString();
+  };
+  return structuredClone(demoTemplates).map(item => {
+    item.createdAt = shift(`2026-10-29T${item.timeline[0].time}:00Z`);
+    item.resolvedAt = item.status === 'Resolved' ? shift(item.updatedAt) : null;
+    item.updatedAt = shift(item.updatedAt);
+    item.checkpoint = shift(item.checkpoint);
+    item.actions.forEach(action => { action.due = shift(action.due); });
+    item.timeline = item.timeline.map(entry => ({
+      ...entry, time: shift(`2026-10-29T${entry.time}:00Z`)
+    })).reverse();
+    return item;
+  });
+}
