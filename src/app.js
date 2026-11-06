@@ -1,4 +1,6 @@
-import { demoEscalations } from './data.js';
+import { createDemoEscalations } from './data.js';
+import { buildAnalytics } from './analytics.js';
+import { editableFields, localDateTime, changeStatus, editEscalation } from './escalations.js';
 
 const STORAGE_KEY = 'escalationiq-data-v3';
 const FALLBACK_KEYS = ['escalationiq-data-v2','escalationiq-data-v1'];
@@ -10,6 +12,7 @@ const filterEl = document.querySelector('#severityFilter');
 const dialog = document.querySelector('#escalationDialog');
 const form = document.querySelector('#escalationForm');
 
+let editingId = null;
 let escalations = loadData();
 let selectedId = escalations[0]?.id || null;
 
@@ -36,7 +39,7 @@ function loadData() {
       } catch {}
     }
   }
-  const fresh = structuredClone(demoEscalations).map(normalize);
+  const fresh = createDemoEscalations().map(normalize);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
   return fresh;
 }
@@ -185,7 +188,7 @@ function renderDetail(){
     <div class="detail-head">
       <div><p class="eyebrow">${esc(item.id)} · ${esc(item.customer)}</p><h2 class="detail-title">${esc(item.title)}</h2>
       <div class="meta"><span class="badge ${item.severity.toLowerCase().replace('-','')}">${esc(item.severity)}</span><span class="badge">${esc(item.status)}</span><span class="badge">Owner: ${esc(item.owner||'Unassigned')}</span></div></div>
-      <div class="detail-actions"><button class="button" id="advanceBtn">Advance status</button><button class="button primary" id="addUpdateBtn">Add update</button></div>
+      <div class="detail-actions"><button class="button" id="editEscalationBtn">Edit escalation</button><button class="button" id="advanceBtn" ${item.status==='Resolved'?'disabled':''}>Advance status</button><button class="button primary" id="addUpdateBtn">Add update</button></div>
     </div>
 
     ${healthPanel(item)}
@@ -212,16 +215,19 @@ function renderDetail(){
       </div><button class="button primary" id="savePostmortemBtn">Save postmortem</button>
     </section>
 
-    <div class="timeline"><h3>Escalation timeline</h3>${item.timeline.map(t=>`<div class="timeline-item"><div class="timeline-time">${esc(t.time)}</div><div class="timeline-text">${esc(t.text)}</div></div>`).join('')}</div>`;
+    <div class="timeline"><h3>Escalation timeline</h3>${item.timeline.map(t=>`<div class="timeline-item"><div class="timeline-time">${esc(t.time.includes('T')?checkpointLabel(t.time):t.time)}</div><div class="timeline-text">${esc(t.text)}</div></div>`).join('')}</div>`;
 
+  document.querySelector('#editEscalationBtn').addEventListener('click',()=>openEscalationDialog(item));
   document.querySelector('#advanceBtn').addEventListener('click',()=>{
     const order=['Investigating','Monitoring','Resolved']; const idx=order.indexOf(item.status);
-    item.status=order[Math.min(idx+1,order.length-1)]; item.updatedAt=new Date().toISOString();
-    item.timeline.unshift({time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),text:`Status changed to ${item.status}.`}); save(); render();
+    if(idx===order.length-1) return;
+    const now=new Date().toISOString();
+    changeStatus(item,order[Math.min(idx+1,order.length-1)],now); item.updatedAt=now;
+    item.timeline.unshift({time:new Date().toISOString(),text:`Status changed to ${item.status}.`}); save(); render();
   });
   document.querySelector('#addUpdateBtn').addEventListener('click',()=>{
     const text=prompt('Enter the escalation update:'); if(!text?.trim()) return;
-    item.timeline.unshift({time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),text:text.trim()}); item.updatedAt=new Date().toISOString(); save(); render();
+    item.timeline.unshift({time:new Date().toISOString(),text:text.trim()}); item.updatedAt=new Date().toISOString(); save(); render();
   });
   document.querySelector('#addStakeholderBtn').addEventListener('click',()=>{
     const name=prompt('Stakeholder name:'); if(!name?.trim()) return;
@@ -238,31 +244,90 @@ function renderDetail(){
   document.querySelectorAll('[data-remove-action]').forEach(btn=>btn.addEventListener('click',()=>{item.actions.splice(Number(btn.dataset.removeAction),1);save();render();}));
   document.querySelector('#savePostmortemBtn').addEventListener('click',()=>{
     item.postmortem={rootCause:document.querySelector('#pmRoot').value.trim(),contributingFactors:document.querySelector('#pmFactors').value.trim(),correctiveActions:document.querySelector('#pmActions').value.trim(),lessonsLearned:document.querySelector('#pmLessons').value.trim()};
-    item.timeline.unshift({time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),text:'Postmortem updated.'}); save(); render();
+    item.timeline.unshift({time:new Date().toISOString(),text:'Postmortem updated.'}); save(); render();
   });
   document.querySelector('#copyExecBtn').addEventListener('click',async()=>{
     await navigator.clipboard.writeText(document.querySelector('#execText').value); const btn=document.querySelector('#copyExecBtn'); btn.textContent='Copied'; setTimeout(()=>btn.textContent='Copy update',1200);
   });
 }
 
-function render(){ renderMetrics(); renderQueue(); renderDetail(); }
+function render(){ renderMetrics(); renderQueue(); renderDetail(); if(!document.querySelector('#analyticsView').hidden) renderAnalytics(); }
 
-document.querySelector('#newEscalationBtn').addEventListener('click',()=>dialog.showModal());
+function showView(analytics) {
+  document.querySelector('#queueView').hidden=analytics;
+  document.querySelector('#analyticsView').hidden=!analytics;
+  for(const [id,selected] of [['queueViewBtn',!analytics],['analyticsViewBtn',analytics]]) {
+    const button=document.getElementById(id);
+    button.classList.toggle('primary',selected);
+    button.setAttribute('aria-pressed',String(selected));
+  }
+  if(analytics) renderAnalytics();
+}
+document.querySelector('#queueViewBtn').addEventListener('click',()=>showView(false));
+document.querySelector('#analyticsViewBtn').addEventListener('click',()=>showView(true));
+
+function openEscalationDialog(item = null) {
+  editingId=item?.id || null;
+  form.reset();
+  document.querySelector('#dialogTitle').textContent=item?'Edit escalation':'Create escalation';
+  document.querySelector('#dialogEyebrow').textContent=item?item.id:'NEW ESCALATION';
+  document.querySelector('#saveEscalationBtn').textContent=item?'Save changes':'Create escalation';
+  if(item) for(const field of editableFields) form.elements.namedItem(field).value=field==='checkpoint'?localDateTime(item[field]):item[field];
+  else form.elements.namedItem('checkpoint').value=localDateTime(Date.now()+36e5);
+  dialog.showModal();
+}
+
+document.querySelector('#newEscalationBtn').addEventListener('click',()=>openEscalationDialog());
 document.querySelector('#closeDialogBtn').addEventListener('click',()=>dialog.close());
 document.querySelector('#cancelDialogBtn').addEventListener('click',()=>dialog.close());
 filterEl.addEventListener('change',renderQueue);
 document.querySelector('#loadDemoBtn').addEventListener('click',()=>{
   if(!confirm('Replace current local data with the demo escalations?')) return;
-  escalations=structuredClone(demoEscalations).map(normalize); selectedId=escalations[0].id; save(); render();
+  escalations=createDemoEscalations().map(normalize); selectedId=escalations[0].id; save(); render();
 });
 document.querySelector('#exportBtn').addEventListener('click',()=>{
   const blob=new Blob([JSON.stringify(escalations,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a');
   a.href=url; a.download='escalationiq-export.json'; a.click(); URL.revokeObjectURL(url);
 });
 form.addEventListener('submit',event=>{
-  event.preventDefault(); const fd=new FormData(form); const nextNumber=1043+escalations.length;
-  const item=normalize({id:`ESC-${nextNumber}`,customer:fd.get('customer'),title:fd.get('title'),severity:fd.get('severity'),status:fd.get('status'),owner:fd.get('owner'),checkpoint:fd.get('checkpoint'),impact:fd.get('impact'),investigation:fd.get('investigation'),updatedAt:new Date().toISOString(),timeline:[{time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),text:'Escalation created and owner assigned.'}]});
-  escalations.unshift(item); selectedId=item.id; save(); form.reset(); dialog.close(); render();
+  event.preventDefault();
+  const fd=new FormData(form);
+  const values=Object.fromEntries(editableFields.map(field=>[field,String(fd.get(field)||'').trim()]));
+  for(const field of ['customer','title','owner','impact','investigation']) {
+    if(!values[field]) { alert('Please complete all required fields.'); form.elements.namedItem(field).focus(); return; }
+  }
+  const checkpoint=new Date(values.checkpoint);
+  if(Number.isNaN(checkpoint.getTime())) { alert('Enter a valid checkpoint date and time.'); return; }
+  values.checkpoint=checkpoint.toISOString();
+  const now=new Date().toISOString();
+  if(editingId) {
+    const item=escalations.find(item=>item.id===editingId);
+    if(!item) return;
+    editEscalation(item,values,now);
+    selectedId=item.id;
+  } else {
+    const nextNumber=Math.max(1042,...escalations.map(item=>Number(item.id.replace('ESC-',''))||0))+1;
+    const item=normalize({id:`ESC-${nextNumber}`,...values,createdAt:now,updatedAt:now,resolvedAt:values.status==='Resolved'?now:null,
+      timeline:[{time:now,text:'Escalation created and owner assigned.'}]});
+    escalations.unshift(item); selectedId=item.id;
+  }
+  save(); form.reset(); editingId=null; dialog.close(); showView(false); render();
 });
+
+function renderAnalytics() {
+  const a=buildAnalytics(escalations);
+  const distribution=(rows,total)=>rows.map(row=>`<div class="distribution-row"><div><span>${esc(row.name)}</span><strong>${row.count}</strong></div><meter min="0" max="${Math.max(total,1)}" value="${row.count}" aria-label="${esc(row.name)} count">${row.count}</meter></div>`).join('');
+  document.querySelector('#analyticsView').innerHTML=`
+    <div class="section-heading"><div><p class="eyebrow">OPERATIONAL INSIGHTS</p><h2>Escalation analytics</h2></div><span class="badge">All saved escalations</span></div>
+    <p class="muted">Includes all records saved in this browser, including demo data. Queue filters do not apply.</p>
+    ${!a.total?'<p class="empty">Create an escalation or load demo data to start tracking performance.</p>':''}
+    <div class="metrics analytics-metrics">${[['Total escalations',a.total],['Active',a.active],['Resolved',a.resolved],['Mean time to resolution',a.meanResolutionHours===null?'—':`${a.meanResolutionHours.toFixed(1)}h`]].map(([label,value])=>`<div class="metric"><div class="label">${label}</div><div class="value">${value}</div></div>`).join('')}</div>
+    <p class="muted">Resolution time uses ${a.timedResolutions} of ${a.resolved} resolved records with valid creation and resolution dates. Reopened incidents measure total time from original creation to latest resolution.</p>
+    <div class="detail-grid"><section class="card"><h3>Active by severity</h3>${distribution(a.severity,a.active)}</section><section class="card"><h3>Current status</h3>${distribution(a.status,a.total)}</section></div>
+    <section class="ops-section"><h3>Daily activity · last 14 days</h3><p class="muted">Calendar days in your local time zone. Resolutions reflect currently resolved incidents and their latest resolution date.</p>
+    <div class="table-scroll"><table><caption class="sr-only">Daily opened and resolved escalation counts</caption><thead><tr><th scope="col">Date</th><th scope="col">Opened</th><th scope="col">Resolved</th></tr></thead><tbody>${a.days.map(day=>`<tr><th scope="row">${esc(day.label)}</th><td>${day.opened}</td><td>${day.resolved}</td></tr>`).join('')}</tbody></table></div>
+    <p class="muted">Missing timestamps: ${a.missingCreated} creation dates; ${a.missingResolved} resolution dates. These records remain in totals but cannot appear in the corresponding daily counts. Dates are not estimated.</p></section>
+    <section class="ops-section"><h3>Active workload by owner</h3>${a.owners.length?`<div class="table-scroll"><table><caption class="sr-only">Owner workload and overdue checkpoints</caption><thead><tr><th scope="col">Owner</th><th scope="col">Active</th><th scope="col">Overdue checkpoints</th></tr></thead><tbody>${a.owners.map(owner=>`<tr><th scope="row">${esc(owner.name)}</th><td>${owner.active}</td><td>${owner.overdue}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No active escalations.</p>'}</section>`;
+}
 
 render();
