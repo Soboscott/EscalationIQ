@@ -1,0 +1,66 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createDemoEscalations} from '../src/data.js';
+import {buildAnalytics} from '../src/analytics.js';
+import {editEscalation,changeStatus,localDateTime,editableFields} from '../src/escalations.js';
+const now = new Date('2026-11-06T14:00:00Z');
+
+test('demo dates move together, remain independent, and preserve chronology',()=>{
+  const first=createDemoEscalations(now), later=createDemoEscalations(new Date(+now+864e5));
+  first.forEach((item,i)=>{
+    for(const field of ['createdAt','updatedAt','checkpoint']) assert.equal(Date.parse(later[i][field])-Date.parse(item[field]),864e5);
+    assert.ok(Date.parse(item.createdAt)<=Date.parse(item.updatedAt));
+    item.actions.forEach((action,j)=>assert.equal(Date.parse(later[i].actions[j].due)-Date.parse(action.due),864e5));
+    item.timeline.forEach((entry,j)=>assert.equal(Date.parse(later[i].timeline[j].time)-Date.parse(entry.time),864e5));
+  });
+  first[0].customer='Changed'; assert.equal(createDemoEscalations(now)[0].customer,'Axiom Commerce');
+  assert.ok(first.some(item=>Date.parse(item.checkpoint)>+now));
+});
+
+test('edits preserve related data, audit fields, and do not refresh no-op saves',()=>{
+  const item=createDemoEscalations(now)[0];
+  const original=structuredClone(item);
+  const values=Object.fromEntries(editableFields.map(field=>[field,item[field]]));
+  values.checkpoint=new Date(localDateTime(item.checkpoint)).toISOString();
+  assert.deepEqual(editEscalation(item,values,now.toISOString()),[]);
+  assert.deepEqual(item,original);
+  values.owner='New owner'; values.severity='SEV-3';
+  assert.deepEqual(editEscalation(item,values,now.toISOString()),['severity','owner']);
+  for(const field of ['id','createdAt','actions','stakeholders','postmortem']) assert.deepEqual(item[field],original[field]);
+  assert.equal(item.timeline.length,original.timeline.length+1);
+});
+
+test('resolution timestamps survive subsequent edits and reset on reopen',()=>{
+  const item=createDemoEscalations(now)[0];
+  changeStatus(item,'Resolved',now.toISOString());
+  assert.equal(item.resolvedAt,now.toISOString());
+  changeStatus(item,'Resolved','2026-11-07T00:00:00Z');
+  assert.equal(item.resolvedAt,now.toISOString());
+  changeStatus(item,'Investigating','2026-11-07T00:00:00Z');
+  assert.equal(item.resolvedAt,null);
+});
+
+test('analytics excludes missing, invalid and future timing data while counting all records',()=>{
+  const items=createDemoEscalations(now);
+  const data=buildAnalytics(items,now);
+  assert.equal(data.total,3); assert.equal(data.active,2); assert.equal(data.timedResolutions,1);
+  assert.ok(Math.abs(data.meanResolutionHours-17/6)<0.001);
+  assert.equal(data.days.reduce((sum,d)=>sum+d.opened,0),3);
+  const legacy={...items[2],createdAt:undefined,resolvedAt:undefined};
+  const invalid={...items[2],resolvedAt:items[2].createdAt,createdAt:now.toISOString()};
+  const future={...items[2],resolvedAt:'2099-01-01T00:00:00Z'};
+  const mixed=buildAnalytics([...items,legacy,invalid,future],now);
+  assert.equal(mixed.total,6); assert.equal(mixed.timedResolutions,1);
+  assert.equal(mixed.missingCreated,1); assert.equal(mixed.missingResolved,1);
+  const empty=buildAnalytics([],now);
+  assert.equal(empty.meanResolutionHours,null); assert.equal(empty.days.length,14);
+});
+
+test('daily counts use local day boundaries and escape-free owner grouping',()=>{
+  const midday=new Date(2026,10,6,12);
+  const rows=[{status:'Investigating',severity:'SEV-2',owner:'__proto__',createdAt:new Date(2026,10,6,0,1).toISOString(),checkpoint:new Date(2026,10,6,10).toISOString()},
+    {status:'Monitoring',severity:'SEV-1',owner:'',createdAt:new Date(2026,9,1).toISOString()}];
+  const a=buildAnalytics(rows,midday);
+  assert.equal(a.days.at(-1).opened,1); assert.equal(a.owners.find(x=>x.name==='__proto__').overdue,1);
+  assert.ok(a.owners.some(x=>x.name==='Unassigned'));
+});
